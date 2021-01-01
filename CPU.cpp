@@ -280,6 +280,8 @@ CPU::CPU() {
     lookupTable[0xF][0xF] = NULL_INSTRUCTION;
 }
 
+CPU::~CPU() = default;
+
 Bits8 CPU::read(Bits16 addr) {
     return bus->read(addr, false);
 }
