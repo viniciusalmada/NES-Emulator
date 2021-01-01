@@ -6,7 +6,8 @@
 #include "Bus.h"
 
 CPU::CPU() {
-    auto NULL_INSTRUCTION = Instruction{"XXX", NULL, NULL, 0};
+    // Lookup table initialisation
+    auto NULL_INSTRUCTION = Instruction{"XXX", &CPU::XXX, NULL, 0};
     lookupTable[0x0][0x0] = {"BRK", &CPU::BRK, &CPU::IMM, 7};
     lookupTable[0x0][0x1] = {"ORA", &CPU::ORA, &CPU::IZX, 6};
     lookupTable[0x0][0x2] = NULL_INSTRUCTION;
@@ -282,29 +283,156 @@ CPU::CPU() {
 
 CPU::~CPU() = default;
 
+// Read an 8-bits from the bus, located at the specified 16-bits address
 Bits8 CPU::read(Bits16 addr) {
+    // The read-only parameter is to be used in disassembler
     return bus->read(addr, false);
 }
 
+// Write mA byte to the bus
 void CPU::write(Bits16 addr, Bits8 data) {
     bus->write(addr, data);
 }
 
+/* Forces the CPU into mA known state.
+ * The register are set to 0x00.
+ * The status register is cleared except for unused bit which remains at 1.
+ * An absolute address is read from location 0xFFFC which contains mA second
+ *      address that the program counter is set to.
+ * This allow the programmer to jump to know and programmable location in the
+ *      memory to start executing from.
+ * Typically the programmer would set the value at location 0xFFFC at compile time.
+ */
+void CPU::reset() {
+    // Get address to set program counter to
+    mAddrAbs = 0xFFFC;
+    Bits16 low = read(mAddrAbs + 0);
+    Bits16 high = read(mAddrAbs + 1);
+
+    // Set it to program counter
+    mPC = (high << 8) | low;
+
+    // Reset internal registers
+    mA = 0;
+    mX = 0;
+    mY = 0;
+    mSTKP = 0xFD;
+    mStatus = 0x00 | U;
+
+    // Clear internal helper properties
+    mAddrRel = 0x0000;
+    mAddrAbs = 0x0000;
+    mFetched = 0x00;
+
+    // Reset takes time
+    mCycles = 8;
+}
+
+/* Interrupt requests are a complex operation and only happen if the
+ * "disable interrupt" flag is 0. IRQs can happen at any time, but
+ * you don't want them to be destructive to the operation of the running
+ * program. Therefore the current instructions is allowed to finish
+ * (which I facilitate by doing the whole thing when mCycles == 0) and
+ * then the current program counter is stored on the stack.
+ * Then the current status register is stored onn the stack.
+ * When the routine that services the interrupt has finished, the status register
+ * and the program counter can be restored to how they where before it
+ * occurred. This is implemented by the "RTI" instruction. Once the IRQ has
+ * happened, in a similar way to a reset, a programmable address
+ * is read form hard coded location 0xFFFE, which is subsequently set to the
+ * program counter.
+ */
+void CPU::irq() {
+    if (getFlag(I) != 0)
+        return;
+
+    // Push the program counter to the stack. It's 16-bits, needs 2 pushes
+    write(0x0100 + mSTKP, (mPC >> 8) & 0x00FF);
+    mSTKP--;
+    write(0x0100 + mSTKP, mPC & 0x00FF);
+    mSTKP--;
+
+    // Pushes the status register to the stack
+    setFlag(B, false);
+    setFlag(U, true);
+    setFlag(I, true);
+    write(0x0100 + mSTKP, mStatus);
+    mSTKP--;
+
+    // Read new program counter location from fixed address
+    mAddrAbs = 0xFFFE;
+    Bits16 low = read(mAddrAbs + 0);
+    Bits16 high = read(mAddrAbs + 1);
+    mPC = (high << 8) | low;
+
+    // IRQs take time
+    mCycles = 7;
+}
+
+/*
+ * A Non-Maskable Interrupt cannot be ignored. It behaves in exactly the
+ * same way as a regular IRQ, but reads the new program counter address
+ * form location 0xFFFA.
+ */
+void CPU::nmi() {
+    write(0x0100 + mSTKP, (mPC >> 8) & 0x00FF);
+    mSTKP--;
+    write(0x0100 + mSTKP, mPC & 0x00FF);
+    mSTKP--;
+
+    setFlag(B, false);
+    setFlag(U, true);
+    setFlag(I, true);
+    write(0x0100 + mSTKP, mStatus);
+    mSTKP--;
+
+    mAddrAbs = 0xFFFA;
+    Bits16 low = read(mAddrAbs + 0);
+    Bits16 high = read(mAddrAbs + 1);
+    mPC = (high << 8) | low;
+
+    mCycles = 8;
+}
+
+// Performs one clock cycles worth of emualtion
 void CPU::clock() {
-    if (cycles == 0) {
-        opcode = read(pc);
-        pc++;
+    /*
+     * Each instruction requires a variable number of clock cycles to execute
+     */
+    if (mCycles == 0) {
+        opcode = read(mPC);
+
+        setFlag(U, true);
+
+        mPC++;
 
         Bits8 opRow = (opcode & 0xF0) >> 4;
         Bits8 opCol = (opcode & 0x0F);
 
-        // Get starting number of cycles
-        cycles = lookupTable[opRow][opCol].cycles;
+        // Get starting number of mCycles
+        mCycles = lookupTable[opRow][opCol].cycles;
         Bits8 addCycleAddr = lookupTable[opRow][opCol].addrMode(this);
         Bits8 addCycleOp = lookupTable[opRow][opCol].operate(this);
 
-        cycles += addCycleAddr & addCycleOp;
-    }
+        mCycles += addCycleAddr & addCycleOp;
 
-    cycles--;
+        setFlag(U, true);
+
+    }
+    mClockCount++;
+
+    mCycles--;
+}
+
+// Returns the value of a specific bit of the status register.
+Bits8 CPU::getFlag(CPU::StatesReg flag) const {
+    return (mStatus & flag) > 0 ? 1 : 0;
+}
+
+// Sets or clears a specific bit of the status register.
+void CPU::setFlag(CPU::StatesReg flag, bool v) {
+    if (v)
+        mStatus |= flag;
+    else
+        mStatus &= ~flag;
 }
