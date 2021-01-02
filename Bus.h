@@ -3,7 +3,7 @@
 
 #include <array>
 #include "CPU.h"
-#include "Typedefs.h"
+#include "Utils.h"
 
 class Bus {
     Bus();

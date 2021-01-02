@@ -406,8 +406,8 @@ void CPU::clock() {
 
         mPC++;
 
-        Bits8 opRow = (opcode & 0xF0) >> 4;
-        Bits8 opCol = (opcode & 0x0F);
+        Bits8 opRow = highB(opcode);
+        Bits8 opCol = lowB(opcode);
 
         // Get starting number of mCycles
         mCycles = lookupTable[opRow][opCol].cycles;
@@ -417,7 +417,6 @@ void CPU::clock() {
         mCycles += addCycleAddr & addCycleOp;
 
         setFlag(U, true);
-
     }
     mClockCount++;
 
@@ -435,4 +434,135 @@ void CPU::setFlag(CPU::StatesReg flag, bool v) {
         mStatus |= flag;
     else
         mStatus &= ~flag;
+}
+
+Bits8 CPU::IMP() {
+    mFetched = mA;
+    return 0;
+}
+
+Bits8 CPU::IMM() {
+    mAddrAbs = mPC++;
+    return 0;
+}
+
+Bits8 CPU::ZP0() {
+    mAddrAbs = read(mPC);
+    mPC++;
+    // Reading from 0 page
+    mAddrAbs = mAddrAbs & 0x00FF;
+    return 0;
+}
+
+Bits8 CPU::ZPX() {
+    // Reading from 0 page offset X
+    mAddrAbs = read(mPC) + mX;
+    mPC++;
+    mAddrAbs = mAddrAbs & 0x00FF;
+    return 0;
+}
+
+Bits8 CPU::ZPY() {
+    mAddrAbs = read(mPC) + mY;
+    mPC++;
+    // Reading from 0 page
+    mAddrAbs = mAddrAbs & 0x00FF;
+    return 0;
+}
+
+Bits8 CPU::ABS() {
+    Bits16 low = read(mPC);
+    mPC++;
+    Bits16 high = read(mPC);
+    mPC++;
+
+    mAddrAbs = (high << 8) | low;
+    return 0;
+}
+
+Bits8 CPU::ABX() {
+    Bits16 low = read(mPC);
+    mPC++;
+    Bits16 high = read(mPC);
+    mPC++;
+
+    mAddrAbs = (high << 8) | low;
+    mAddrAbs += mX;
+
+    Bits16 pageAbs = mAddrAbs & 0xFF00;
+    bool differentFrom0Page = pageAbs != (high << 8);
+
+    if (differentFrom0Page)
+        return 1;
+    return 0;
+}
+
+Bits8 CPU::ABY() {
+    Bits16 low = read(mPC);
+    mPC++;
+    Bits16 high = read(mPC);
+    mPC++;
+
+    mAddrAbs = (high << 8) | low;
+    mAddrAbs += mY;
+
+    Bits16 pageAbs = mAddrAbs & 0xFF00;
+    bool differentFrom0Page = pageAbs != (high << 8);
+
+    if (differentFrom0Page)
+        return 1;
+    return 0;
+}
+
+Bits8 CPU::IND() {
+    // Get the address that is pointing to desired data
+    Bits16 ptrLow = read(mPC);
+    mPC++;
+    Bits16 ptrHigh = read(mPC);
+    mPC++;
+
+    Bits16 ptr = (ptrHigh << 8) | ptrLow;
+    // Get the desired data from address located at 'pointer' ptr
+    if (ptrLow == 0x00FF) // Simulate page boundary hardware bug
+        mAddrAbs = (read(ptr & 0xFF00) << 8) | read(ptr + 0);
+    else
+        mAddrAbs = (read(ptr + 1) << 8) | read(ptr + 0);
+
+    return 0;
+}
+
+Bits8 CPU::IZX() {
+    Bits16 t = read(mPC);
+    mPC++;
+
+    Bits16 low = read(t + (Bits16) mX) & 0x00FF;
+    Bits16 high = read(t + (Bits16) mX + 1) & 0x00FF;
+
+    mAddrAbs = (high << 8) | low;
+    return 0;
+}
+
+Bits8 CPU::IZY() {
+    Bits16 t = read(mPC);
+    mPC++;
+
+    Bits16 low = read(t & 0x00FF);
+    Bits16 high = read((t + 1) & 0x00FF);
+
+    mAddrAbs = (high << 8) | low;
+    mAddrAbs += mY;
+
+    if ((mAddrAbs & 0xFF00) != (high << 8))
+        return 1;
+
+    return 0;
+}
+
+Bits8 CPU::REL() {
+    mAddrRel = read(mPC);
+    mPC++;
+    if (mAddrRel & 0x80)
+        mAddrRel = mAddrRel | 0xFF00;
+    return 0;
+
 }

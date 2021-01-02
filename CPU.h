@@ -3,7 +3,7 @@
 
 #include <string>
 #include <functional>
-#include "Typedefs.h"
+#include "Utils.h"
 
 class Bus;
 
@@ -108,6 +108,7 @@ private:
     // and how the memory is accessed, so they return the required
     // adjustment.
     // From @javidx9
+
     Bits8 IMP();
 
     Bits8 IMM();
@@ -117,8 +118,6 @@ private:
     Bits8 ZPX();
 
     Bits8 ZPY();
-
-    Bits8 REL();
 
     Bits8 ABS();
 
@@ -131,6 +130,8 @@ private:
     Bits8 IZX();
 
     Bits8 IZY();
+
+    Bits8 REL();
 
     // Opcodes ======================================================
     // There are 56 "legitimate" opcodes provided by the 6502 CPU. I
