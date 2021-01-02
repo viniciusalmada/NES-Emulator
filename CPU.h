@@ -66,7 +66,7 @@ private:
     Bits16 temp = 0x0000;    // A convenience variable used everywhere
     Bits16 mAddrAbs = 0x0000;    // All used memory addresses end up here
     Bits16 mAddrRel = 0x0000;    // Represents absolute address following mA branch
-    Bits8 opcode = 0x00;    // Is the instruction byte
+    Bits8 mOpcode = 0x00;    // Is the instruction byte
     Bits8 mCycles = 0x00;    // Counts how many mCycles the instruction has remaining
     Bits32 mClockCount = 0x00000000;    // Counts how many mCycles the instruction has remaining
 
@@ -77,18 +77,23 @@ private:
 
     void write(Bits16 addr, Bits8 data);
 
-    // Instructions to represents an opcode.
-    struct Instruction {
+    // Instructions to represents an mOpcode.
+    struct Instr {
         std::string name;
-        std::function<Bits8(CPU*)> operate;
-        std::function<Bits8(CPU*)> addrMode;
-        Bits8 cycles = 0;
+
+        Bits8 (CPU::*operate)();
+
+        Bits8 (CPU::*addrMode)();
+
+        Bits8 cycles;
     };
 
     // Lookup table with all 256 possible opcodes.
     // The access to it can be done through mA single Byte:
     // The first 4 bits to row, and the other 4 bits, to get column;
-    std::array<std::array<Instruction, 16>, 16> lookupTable;
+    std::array<std::array<Instr, 16>, 16> lookupTable;
+
+    Instr opcodeInstr(Bits8 op);
 
 private:
 

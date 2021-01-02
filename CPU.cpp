@@ -7,7 +7,7 @@
 
 CPU::CPU() {
     // Lookup table initialisation
-    auto NULL_INSTRUCTION = Instruction{"XXX", &CPU::XXX, NULL, 0};
+    auto NULL_INSTRUCTION = Instr{"XXX", &CPU::BRK, &CPU::IMM, 7};
     lookupTable[0x0][0x0] = {"BRK", &CPU::BRK, &CPU::IMM, 7};
     lookupTable[0x0][0x1] = {"ORA", &CPU::ORA, &CPU::IZX, 6};
     lookupTable[0x0][0x2] = NULL_INSTRUCTION;
@@ -294,6 +294,13 @@ void CPU::write(Bits16 addr, Bits8 data) {
     bus->write(addr, data);
 }
 
+CPU::Instr CPU::opcodeInstr(Bits8 op) {
+    Bits8 opRow = highB(op);
+    Bits8 opCol = lowB(op);
+
+    return lookupTable[opRow][opCol];
+}
+
 /* Forces the CPU into mA known state.
  * The register are set to 0x00.
  * The status register is cleared except for unused bit which remains at 1.
@@ -400,19 +407,18 @@ void CPU::clock() {
      * Each instruction requires a variable number of clock cycles to execute
      */
     if (mCycles == 0) {
-        opcode = read(mPC);
+        mOpcode = read(mPC);
 
         setFlag(U, true);
 
         mPC++;
 
-        Bits8 opRow = highB(opcode);
-        Bits8 opCol = lowB(opcode);
+        Instr ins = opcodeInstr(mOpcode);
 
         // Get starting number of mCycles
-        mCycles = lookupTable[opRow][opCol].cycles;
-        Bits8 addCycleAddr = lookupTable[opRow][opCol].addrMode(this);
-        Bits8 addCycleOp = lookupTable[opRow][opCol].operate(this);
+        mCycles = ins.cycles;
+        Bits8 addCycleAddr = (this->*ins.addrMode)();
+        Bits8 addCycleOp = (this->*ins.operate)();
 
         mCycles += addCycleAddr & addCycleOp;
 
@@ -565,4 +571,19 @@ Bits8 CPU::REL() {
         mAddrRel = mAddrRel | 0xFF00;
     return 0;
 
+}
+
+Bits8 CPU::fetchData() {
+    if (opcodeInstr(mOpcode).addrMode != &CPU::IMP)
+        mFetched = read(mAddrAbs);
+    return mFetched;
+}
+
+Bits8 CPU::AND() {
+    fetchData();
+    mA = mA & mFetched;
+
+    setFlag(Z, mA == 0x00);
+    setFlag(N, mA & 0x80);
+    return 1;
 }
